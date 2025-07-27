@@ -1,12 +1,22 @@
 import React, { useState } from "react";
+import ProductCard from "./ProductCard";
+import { useCart } from "../context/CartContext";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const dummyProducts = [
-  { id: 1, name: "Product A", price: 100, image: "https://via.placeholder.com/100" },
-  { id: 2, name: "Product B", price: 200, image: "https://via.placeholder.com/100" },
+  { id: 1, name: "Product A", new_price: 100, old_price: 120, image: "https://via.placeholder.com/100" },
+  { id: 2, name: "Product B", new_price: 200, old_price: 250, image: "https://via.placeholder.com/100" },
 ];
 
 export default function ProductList() {
   const [view, setView] = useState("grid");
+  const { addToCart } = useCart();
+
+  const handleAddToCart = (product) => {
+    addToCart(product);
+    // No need to show toast here if CartContext already does it
+  };
 
   return (
     <div>
@@ -26,16 +36,15 @@ export default function ProductList() {
       </div>
       <div className={view === "grid" ? "grid grid-cols-2 gap-4" : "flex flex-col gap-4"}>
         {dummyProducts.map((product) => (
-          <div key={product.id} className="border p-4 rounded flex items-center">
-            <img src={product.image} alt={product.name} className="w-16 h-16 mr-4" />
-            <div>
-              <h3 className="font-bold">{product.name}</h3>
-              <p>₹{product.price}</p>
-              <button className="mt-2 bg-blue-600 text-white px-3 py-1 rounded">Add to Cart</button>
-            </div>
-          </div>
+          <ProductCard
+            key={product.id}
+            product={product}
+            view={view}
+            addToCart={() => handleAddToCart(product)}
+          />
         ))}
       </div>
+      <ToastContainer />
     </div>
   );
 }

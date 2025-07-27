@@ -1,70 +1,123 @@
-import React, { useEffect, useState } from 'react';
-import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
-import { Link } from 'react-router-dom';
 
-const TrackShipment = () => {
-  const [shipments, setShipments] = useState([]);
-  const [loading, setLoading] = useState(true);
+import React, { useEffect, useState } from "react";
+import { db, auth } from "../firebase/firebaseConfig";
+import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { toast } from "react-toastify";
 
-  const db = getFirestore();
-  const auth = getAuth();
+const statusColors = {
+  Pending: "bg-yellow-400 text-yellow-900",
+  Shipped: "bg-blue-400 text-blue-900",
+  Delivered: "bg-green-400 text-green-900"
+};
+
+export default function TrackShipment() {
+  const [orders, setOrders] = useState([]);
+  const [userId, setUserId] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [view, setView] = useState("card");
 
   useEffect(() => {
-    const fetchShipments = async () => {
-      try {
-        const user = auth.currentUser;
-        if (!user) return;
-
-        const q = query(
-          collection(db, 'shipments'),
-          where('userId', '==', user.uid)
-        );
-
-        const querySnapshot = await getDocs(q);
-        const shipmentList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        setShipments(shipmentList);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching shipments:', error);
-      }
-    };
-
-    fetchShipments();
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setUserId(user ? user.uid : "");
+    });
+    return () => unsub();
   }, []);
 
-  return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold mb-4">📦 Your Shipments</h1>
+  useEffect(() => {
+    if (!userId) return;
+    const q = query(
+      collection(db, "orders"),
+      where("userId", "==", userId),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setOrders(data);
+    });
+    return () => unsub();
+  }, [userId]);
 
-      {loading ? (
-        <p className="text-gray-600">Loading shipments...</p>
-      ) : shipments.length === 0 ? (
-        <p className="text-gray-500">No shipments found.</p>
-      ) : (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {shipments.map(shipment => (
-            <div key={shipment.id} className="bg-white p-4 rounded-xl shadow hover:shadow-md transition">
-              <h2 className="font-semibold text-lg mb-2">Tracking ID: {shipment.id}</h2>
-              <p><span className="font-medium">To:</span> {shipment.receiver}</p>
-              <p><span className="font-medium">Package Size:</span> {shipment.packageSize}</p>
-              <p><span className="font-medium">Status:</span> <span className="text-green-600">{shipment.status}</span></p>
-              <Link
-                to={`/track-shipment/${shipment.id}`}
-                className="mt-3 inline-block bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700"
-              >
-                Track
-              </Link>
+  const filtered = statusFilter === "All" ? orders : orders.filter(o => o.status === statusFilter);
+
+  return (
+    <div className="max-w-4xl mx-auto py-8">
+      <h2 className="text-2xl font-bold mb-6 text-center">My Shipments</h2>
+      <div className="flex flex-wrap gap-4 justify-between items-center mb-6">
+        <div className="flex gap-2">
+          {["All", "Pending", "Shipped", "Delivered"].map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1 rounded-full border ${statusFilter === s ? "bg-indigo-600 text-white" : "bg-white text-gray-700"}`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setView("card")}
+            className={`px-3 py-1 rounded border ${view === "card" ? "bg-indigo-500 text-white" : "bg-white text-gray-700"}`}
+          >Card</button>
+          <button
+            onClick={() => setView("table")}
+            className={`px-3 py-1 rounded border ${view === "table" ? "bg-indigo-500 text-white" : "bg-white text-gray-700"}`}
+          >Table</button>
+        </div>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="text-center text-gray-500 py-12">No orders found</div>
+      ) : view === "card" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {filtered.map(order => (
+            <div key={order.id} className="bg-white rounded shadow p-6 flex flex-col gap-2 animate-fade-in">
+              <div className="flex justify-between items-center mb-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[order.status] || "bg-gray-300 text-gray-700"}`}>{order.status}</span>
+                <span className="text-xs text-gray-400">{order.createdAt?.toDate().toLocaleString()}</span>
+              </div>
+              <div className="font-semibold">Sender: <span className="font-normal">{order.sender}</span></div>
+              <div className="font-semibold">Receiver: <span className="font-normal">{order.receiver}</span></div>
+              <div className="font-semibold">Delivery Address: <span className="font-normal">{order.address}</span></div>
+              <div className="font-semibold">Package Size: <span className="font-normal">{order.packageSize}</span></div>
+              <div className="mt-2">
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className={`h-2 rounded-full transition-all duration-700 ${order.status === "Pending" ? "bg-yellow-400 w-1/4" : order.status === "Shipped" ? "bg-blue-400 w-2/3" : order.status === "Delivered" ? "bg-green-400 w-full" : "bg-gray-300 w-1/6"}`}></div>
+                </div>
+              </div>
             </div>
           ))}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white rounded shadow">
+            <thead>
+              <tr>
+                <th className="px-4 py-2">Date</th>
+                <th className="px-4 py-2">Sender</th>
+                <th className="px-4 py-2">Receiver</th>
+                <th className="px-4 py-2">Address</th>
+                <th className="px-4 py-2">Package Size</th>
+                <th className="px-4 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(order => (
+                <tr key={order.id} className="animate-fade-in">
+                  <td className="px-4 py-2 text-xs text-gray-500">{order.createdAt?.toDate().toLocaleString()}</td>
+                  <td className="px-4 py-2">{order.sender}</td>
+                  <td className="px-4 py-2">{order.receiver}</td>
+                  <td className="px-4 py-2">{order.address}</td>
+                  <td className="px-4 py-2">{order.packageSize}</td>
+                  <td className="px-4 py-2">
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[order.status] || "bg-gray-300 text-gray-700"}`}>{order.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
-};
-
-export default TrackShipment;
+}
